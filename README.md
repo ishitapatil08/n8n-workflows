@@ -1,38 +1,34 @@
-# 🚀 n8n Workflow Automation Repository
+# n8n Workflow Automation Repository
 
-This repository contains a collection of **n8n workflows** designed to automate business processes, integrate APIs, and build AI-driven automation systems.
+## Overview
+This repository contains a collection of workflow automation solutions built using :contentReference[oaicite:0]{index=0}. The workflows are designed to automate business processes, integrate external APIs, and implement AI-driven automation systems for real-world use cases.
+
+The project demonstrates practical applications of workflow orchestration, including CRM automation, lead management, and intelligent decision-making systems.
 
 ---
 
-## 📌 Overview
-
-This project demonstrates how to use **n8n** to:
-- Automate repetitive tasks
+## Objectives
+- Automate repetitive business processes
 - Integrate multiple APIs and services
-- Build AI-powered workflows
-- Manage CRM and lead pipelines
-- Create scalable automation systems for real-world use cases
+- Build scalable AI-driven workflows
+- Design and manage sales funnel automation systems
+- Enable data-driven decision-making
 
 ---
 
-## 🧠 Features
-
-- 🔗 API Integrations (REST APIs, Webhooks)
-- 🤖 AI-powered workflows (LLMs, automation agents)
-- 📊 Lead management & CRM automation
-- 📩 Email & WhatsApp automation
-- ⏱ Scheduled & event-based triggers
-- 🔄 Data transformation and routing
-
----
-
-## 🛠 Tech Stack
-
-- **n8n** – Workflow automation platform  
-- **Python** (optional) – Data processing / AI logic  
-- **REST APIs** – External integrations  
-- **Webhooks** – Real-time event handling  
+## Features
+- API integrations using REST and Webhooks
+- Event-driven and scheduled workflows
+- AI-based lead qualification and routing
+- CRM and sales pipeline automation
+- Email and messaging automation
+- Data transformation and workflow orchestration
 
 ---
 
-## 📂 Project Structure
+## Technology Stack
+- n8n (Workflow Automation)
+- Python (Optional for data processing and AI logic)
+- REST APIs (Integration layer)
+- Webhooks (Real-time triggers)
+
