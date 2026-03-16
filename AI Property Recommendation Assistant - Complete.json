@@ -1,0 +1,442 @@
+{
+  "name": "AI Property Recommendation Assistant - Complete",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "eb4cb103-fab7-4d6a-a3fb-f2e2e3ccd827",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -688,
+        144
+      ],
+      "webhookId": "af3a6e98-d0ae-4e15-bca5-5999bba77333"
+    },
+    {
+      "parameters": {
+        "agent": "conversationalAgent",
+        "promptType": "define",
+        "text": "You are an AI Property Recommendation Assistant for a real estate platform.\n\nYour role:\n- Help users find suitable properties based on their preferences\n- Extract key requirements: bedrooms, budget, location, property type\n- Search the property database using the available tools\n- Provide personalized property recommendations\n- Schedule property visits when requested\n- Send property brochures and details\n- Notify sales agents of qualified leads\n\nAlways:\n- Ask clarifying questions if requirements are unclear\n- Use the property search tool before making recommendations\n- Provide detailed property information including price, location, features\n- Offer to schedule visits for interested prospects\n- Be helpful, professional, and knowledgeable about real estate\n\nNever hallucinate property details - only use information from the search results.",
+        "options": {
+          "maxIterations": 10,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "9dc82dd6-bba2-4e9b-a905-d85b3f56c78d",
+      "name": "Property AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        -336,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxTokens": 2000,
+          "temperature": 0.1
+        }
+      },
+      "id": "7d018e8b-279d-4ca5-9ac9-84dcad31f394",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        368
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "qcWqR0BMMP8nRtPK",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 30
+      },
+      "id": "7b78edac-b6c0-40f7-a6fa-df071115f32f",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        -592,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "name": "property_search",
+        "description": "Search for properties in the database based on user criteria like bedrooms, budget, location, property type",
+        "workflowId": "property-search-workflow",
+        "fields": {
+          "values": [
+            {
+              "name": "bedrooms",
+              "type": "number"
+            },
+            {
+              "name": "max_budget",
+              "type": "number"
+            },
+            {
+              "name": "location",
+              "type": "string"
+            },
+            {
+              "name": "property_type",
+              "type": "string"
+            },
+            {
+              "name": "min_budget",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "3c61ba56-6126-4b41-b38d-29aee3ec6b98",
+      "name": "Property Search Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        16,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "name": "schedule_visit",
+        "description": "Schedule a property visit for the user",
+        "workflowId": "schedule-visit-workflow",
+        "fields": {
+          "values": [
+            {
+              "name": "property_id",
+              "type": "string"
+            },
+            {
+              "name": "user_name",
+              "type": "string"
+            },
+            {
+              "name": "user_email",
+              "type": "string"
+            },
+            {
+              "name": "user_phone",
+              "type": "string"
+            },
+            {
+              "name": "preferred_date",
+              "type": "string"
+            },
+            {
+              "name": "preferred_time",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "26871796-8240-406b-8dba-838d4d056f5f",
+      "name": "Schedule Visit Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "name": "send_brochure",
+        "description": "Send property brochures and detailed information to the user",
+        "workflowId": "send-brochure-workflow",
+        "fields": {
+          "values": [
+            {
+              "name": "property_id",
+              "type": "string"
+            },
+            {
+              "name": "user_email",
+              "type": "string"
+            },
+            {
+              "name": "user_name",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "7be80f71-8bc8-4e76-aae9-5fe465f9b058",
+      "name": "Send Brochure Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        -192,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "name": "notify_agent",
+        "description": "Notify sales agent about qualified leads",
+        "workflowId": "notify-agent-workflow",
+        "fields": {
+          "values": [
+            {
+              "name": "user_name"
+            },
+            {
+              "name": "user_email",
+              "type": "string"
+            },
+            {
+              "name": "user_phone",
+              "type": "string"
+            },
+            {
+              "name": "property_interest",
+              "type": "string"
+            },
+            {
+              "name": "budget_range",
+              "type": "string"
+            },
+            {
+              "name": "urgency_level",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "d2c1f2ab-0767-4816-aaa0-e5b9bd9d36ef",
+      "name": "Notify Sales Agent Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        -384,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "notify-agent-main"
+      },
+      "id": "ec1e2f8e-e514-41f6-baad-ca859b505276",
+      "name": "📢 Notify Sales Agent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "lead-condition",
+              "leftValue": "={{ $('Property AI Agent').item.json.toolCalls[0]?.name }}",
+              "rightValue": "notify_agent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "any"
+        },
+        "options": {}
+      },
+      "id": "5b95e243-e3eb-4f17-a685-e569fc93f9e0",
+      "name": "🎯 Hot Lead Detector",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        192,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "✅ Lead captured and sales team notified! A agent will contact you within 24 hours.",
+        "options": {}
+      },
+      "id": "fe12a13d-5fd7-4c2a-8bd1-24582457d5fb",
+      "name": "✅ Lead Confirmed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        592,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "text": "🔥 HOT LEAD ALERT!\n\n👤 {{ $json.user_name }}\n📧 {{ $json.user_email }}\n📱 {{ $json.user_phone }}\n💰 Budget: {{ $json.budget_range }}\n🏠 Interested: {{ $json.property_interest }}\n⚡ Urgency: {{ $json.urgency_level }}",
+        "otherOptions": {}
+      },
+      "id": "40ee0b7a-54a8-49ff-9fc5-83114862e8a6",
+      "name": "📱 Slack Sales Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        544,
+        224
+      ],
+      "webhookId": "176f0305-4c02-4e27-8b8e-c093bb2528c9",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "shkJC31mqhB2WZAf",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Property Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Visit Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Brochure Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Sales Agent Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Property AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Property AI Agent": {
+      "main": [
+        [
+          {
+            "node": "🎯 Hot Lead Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📢 Notify Sales Agent": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "🎯 Hot Lead Detector": {
+      "main": [
+        [
+          {
+            "node": "✅ Lead Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📱 Slack Sales Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "d4fc7a3d-20fd-4b29-99e2-3eb2aa80a183",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d2b0503a347d3f73f62b1daac88bc93116c955b4b00fb1ba9c6a6aaba69fb99b"
+  },
+  "id": "Rr9nqeteS1hP90Kz-insn",
+  "tags": []
+}

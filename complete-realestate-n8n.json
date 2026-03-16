@@ -1,0 +1,637 @@
+{
+  "name": "Real Estate AI Calling Agent - Complete",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "1"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Leads!A:H",
+        "options": {}
+      },
+      "name": "Read Leads Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 300],
+      "id": "2",
+      "notes": "Columns: Name | Phone | Email | Status | Last_Call_Attempt | Attempts | Lead_ID | Row_Number"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.Status}}",
+              "rightValue": "Not Called",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.Status}}",
+              "rightValue": "Not Answered",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.Status}}",
+              "rightValue": "Busy",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.Status}}",
+              "rightValue": "Call Back",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        }
+      },
+      "name": "Filter Callable Leads",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "3",
+      "notes": "Only process leads that need calling"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.Attempts || 0}}",
+              "operation": "smaller",
+              "value2": 3
+            }
+          ]
+        }
+      },
+      "name": "Check Retry Limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "id": "4",
+      "notes": "Maximum 3 call attempts"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Leads!D{{$json.Row_Number}}:F{{$json.Row_Number}}",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "dataMode": "autoMapInputData",
+        "valueInputMode": "USER_ENTERED"
+      },
+      "name": "Update Status to Calling",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 280],
+      "id": "5",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_RETELL_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "from_number",
+              "value": "YOUR_RETELL_PHONE_NUMBER"
+            },
+            {
+              "name": "to_number",
+              "value": "={{$json.Phone}}"
+            },
+            {
+              "name": "agent_id",
+              "value": "YOUR_RETELL_AGENT_ID"
+            },
+            {
+              "name": "metadata",
+              "value": "={\"lead_id\": \"{{$json.Lead_ID}}\", \"name\": \"{{$json.Name}}\", \"row_number\": \"{{$json.Row_Number}}\"}"
+            },
+            {
+              "name": "retell_llm_dynamic_variables",
+              "value": "={\"customer_name\": \"{{$json.Name}}\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Initiate Retell AI Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 280],
+      "id": "6"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retell-webhook-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - Retell Call Complete",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 600],
+      "webhookId": "retell-call-complete",
+      "id": "7",
+      "notes": "Retell AI sends call completion data here"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Retell AI webhook data\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json.body || item.json;\n  \n  // Extract call details\n  const callStatus = data.call_status || 'unknown';\n  const transcript = data.transcript || [];\n  const metadata = data.metadata ? JSON.parse(data.metadata) : {};\n  \n  // Determine final status\n  let finalStatus = 'Failed';\n  \n  if (callStatus === 'ended') {\n    // Call connected successfully\n    finalStatus = 'Connected';\n  } else if (callStatus === 'no-answer') {\n    finalStatus = 'Not Answered';\n  } else if (callStatus === 'busy') {\n    finalStatus = 'Busy';\n  } else if (callStatus === 'failed') {\n    finalStatus = 'Failed';\n  } else if (callStatus === 'voicemail') {\n    finalStatus = 'Not Answered';\n  }\n  \n  // Extract property requirements from transcript\n  let propertyType = 'Not Specified';\n  let budget = 'Not Specified';\n  let location = 'Not Specified';\n  let bhk = 'Not Specified';\n  let purpose = 'Not Specified';\n  let additionalReq = '';\n  \n  // Combine all transcript text\n  const fullText = transcript\n    .map(t => t.content || '')\n    .join(' ')\n    .toLowerCase();\n  \n  // Extract property type\n  if (fullText.includes('apartment') || fullText.includes('flat')) propertyType = 'Apartment';\n  else if (fullText.includes('villa')) propertyType = 'Villa';\n  else if (fullText.includes('house') || fullText.includes('bungalow')) propertyType = 'House';\n  else if (fullText.includes('commercial') || fullText.includes('office')) propertyType = 'Commercial';\n  else if (fullText.includes('plot') || fullText.includes('land')) propertyType = 'Plot';\n  \n  // Extract budget\n  const budgetMatch = fullText.match(/(\\d+(?:\\.\\d+)?)\\s*(lakh|lakhs|crore|crores)/i);\n  if (budgetMatch) {\n    budget = budgetMatch[0];\n  }\n  \n  // Extract BHK\n  const bhkMatch = fullText.match(/(\\d+)\\s*(bhk|bedroom|bedrooms)/i);\n  if (bhkMatch) {\n    bhk = bhkMatch[1] + ' BHK';\n  }\n  \n  // Extract purpose\n  if (fullText.includes('buy') || fullText.includes('purchase')) purpose = 'Buy';\n  else if (fullText.includes('rent') || fullText.includes('lease')) purpose = 'Rent';\n  else if (fullText.includes('invest')) purpose = 'Investment';\n  \n  // Extract location (simple approach - look for common city names)\n  const cities = ['mumbai', 'delhi', 'bangalore', 'hyderabad', 'pune', 'chennai', 'kolkata', 'ahmedabad', 'gurgaon', 'noida'];\n  for (const city of cities) {\n    if (fullText.includes(city)) {\n      location = city.charAt(0).toUpperCase() + city.slice(1);\n      break;\n    }\n  }\n  \n  // Get additional requirements\n  if (fullText.includes('parking')) additionalReq += 'Parking required, ';\n  if (fullText.includes('furnished')) additionalReq += 'Furnished, ';\n  if (fullText.includes('pool') || fullText.includes('swimming')) additionalReq += 'Swimming pool, ';\n  if (fullText.includes('gym')) additionalReq += 'Gym, ';\n  if (fullText.includes('garden')) additionalReq += 'Garden, ';\n  \n  results.push({\n    lead_id: metadata.lead_id,\n    customer_name: metadata.name,\n    row_number: metadata.row_number,\n    call_id: data.call_id,\n    call_status: finalStatus,\n    call_duration: data.call_analysis?.call_duration || 0,\n    property_type: propertyType,\n    budget: budget,\n    location: location,\n    bhk: bhk,\n    purpose: purpose,\n    additional_requirements: additionalReq.slice(0, -2),\n    full_transcript: JSON.stringify(transcript),\n    timestamp: new Date().toISOString(),\n    data_collected: propertyType !== 'Not Specified' || budget !== 'Not Specified'\n  });\n}\n\nreturn results;"
+      },
+      "name": "Parse Call Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600],
+      "id": "8"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Leads!D{{$json.row_number}}:F{{$json.row_number}}",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "columns": {
+          "mappings": [
+            {
+              "column": "Status",
+              "value": "={{$json.call_status}}"
+            },
+            {
+              "column": "Last_Call_Attempt",
+              "value": "={{$json.timestamp}}"
+            },
+            {
+              "column": "Attempts",
+              "value": "={{$json.attempts + 1}}"
+            }
+          ]
+        }
+      },
+      "name": "Update Lead Status in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 600],
+      "id": "9"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.call_status}}",
+              "operation": "equals",
+              "value2": "Connected"
+            }
+          ],
+          "boolean": [
+            {
+              "value1": "={{$json.data_collected}}",
+              "value2": true
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "name": "Check If Data Collected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 600],
+      "id": "10"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "CallResults!A:M",
+        "options": {
+          "valueInputMode": "USER_ENTERED"
+        },
+        "columns": {
+          "mappings": [
+            {
+              "column": "Lead_ID",
+              "value": "={{$json.lead_id}}"
+            },
+            {
+              "column": "Customer_Name",
+              "value": "={{$json.customer_name}}"
+            },
+            {
+              "column": "Call_Status",
+              "value": "={{$json.call_status}}"
+            },
+            {
+              "column": "Property_Type",
+              "value": "={{$json.property_type}}"
+            },
+            {
+              "column": "Budget",
+              "value": "={{$json.budget}}"
+            },
+            {
+              "column": "Location",
+              "value": "={{$json.location}}"
+            },
+            {
+              "column": "BHK",
+              "value": "={{$json.bhk}}"
+            },
+            {
+              "column": "Purpose",
+              "value": "={{$json.purpose}}"
+            },
+            {
+              "column": "Additional_Requirements",
+              "value": "={{$json.additional_requirements}}"
+            },
+            {
+              "column": "Call_Duration",
+              "value": "={{$json.call_duration}}"
+            },
+            {
+              "column": "Timestamp",
+              "value": "={{$json.timestamp}}"
+            },
+            {
+              "column": "Transcript",
+              "value": "={{$json.full_transcript}}"
+            },
+            {
+              "column": "WhatsApp_Sent",
+              "value": "Pending"
+            }
+          ]
+        }
+      },
+      "name": "Save to CallResults Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 580],
+      "id": "11"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://graph.facebook.com/v18.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={\"body\": \"Hi {{$json.customer_name}},\\n\\nThank you for speaking with our AI assistant! 🏠\\n\\nHere's a summary of your property requirements:\\n\\n🏢 Property Type: {{$json.property_type}}\\n💰 Budget: {{$json.budget}}\\n📍 Preferred Location: {{$json.location}}\\n🛏️ Size: {{$json.bhk}}\\n🎯 Purpose: {{$json.purpose}}\\n✨ Additional: {{$json.additional_requirements}}\\n\\nPlease reply:\\n✅ YES - To confirm these details\\n📝 CHANGE - To modify requirements\\n📞 CALL - To speak with our team\\n\\nWe'll send you matching properties soon!\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send WhatsApp Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 580],
+      "id": "12"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - WhatsApp Incoming",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 900],
+      "webhookId": "whatsapp-incoming",
+      "id": "13",
+      "notes": "Receives incoming WhatsApp messages"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse WhatsApp webhook\nconst data = $input.item.json.body || $input.item.json;\n\nif (!data.entry || !data.entry[0].changes) {\n  return [];\n}\n\nconst message = data.entry[0].changes[0].value.messages?.[0];\n\nif (!message) {\n  return [];\n}\n\nconst from = message.from;\nconst messageText = message.text?.body?.toLowerCase() || '';\nconst messageType = message.type;\n\nreturn [{\n  from: from,\n  message: messageText,\n  type: messageType,\n  timestamp: message.timestamp\n}];"
+      },
+      "name": "Parse WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 900],
+      "id": "14"
+    },
+    {
+      "parameters": {
+        "jsCode": "// WhatsApp Bot Logic\nconst message = $input.item.json.message;\nconst from = $input.item.json.from;\n\nlet response = '';\n\n// Keywords and responses\nif (message.includes('yes') || message.includes('confirm')) {\n  response = \"Great! ✅ Your requirements are confirmed. Our property experts will share matching options within 24 hours. You can also browse properties at [YOUR_WEBSITE]\";\n  \n} else if (message.includes('change') || message.includes('modify')) {\n  response = \"No problem! 📝 Our team will call you shortly to update your requirements. Or you can directly share what you'd like to change here.\";\n  \n} else if (message.includes('call') || message.includes('speak') || message.includes('talk')) {\n  response = \"📞 Our property consultant will call you within 30 minutes. For immediate assistance, call us at +91-XXXXXXXXXX\";\n  \n} else if (message.includes('properties') || message.includes('options') || message.includes('available')) {\n  response = \"🏠 We're currently matching your requirements with our database. You'll receive property options via WhatsApp within 24 hours. Meanwhile, check [YOUR_WEBSITE] for latest listings.\";\n  \n} else if (message.includes('visit') || message.includes('viewing') || message.includes('schedule')) {\n  response = \"📅 To schedule a property visit, please share:\\n1. Preferred date\\n2. Preferred time\\n3. Any specific property you'd like to see\\n\\nOur team will confirm your appointment!\";\n  \n} else if (message.includes('price') || message.includes('cost') || message.includes('budget')) {\n  response = \"💰 Property prices vary based on location, size, and amenities. Based on your budget preference, we'll share options that match your requirements. Need help adjusting your budget? Just let us know!\";\n  \n} else if (message.includes('location') || message.includes('area') || message.includes('where')) {\n  response = \"📍 We cover properties across major locations. Based on your preference, we'll show you options in your desired area. Want to explore other locations? Just mention them!\";\n  \n} else if (message.includes('loan') || message.includes('emi') || message.includes('finance')) {\n  response = \"🏦 We can help you with home loan assistance! Our financial partners offer:\\n• Low interest rates\\n• Quick approval\\n• Minimal documentation\\n\\nWould you like us to connect you with our loan advisor?\";\n  \n} else if (message.includes('thank') || message.includes('thanks')) {\n  response = \"You're welcome! 😊 We're here to help you find your dream property. Feel free to ask anything else!\";\n  \n} else if (message.includes('hi') || message.includes('hello') || message.includes('hey')) {\n  response = \"Hello! 👋 Welcome to [YOUR_COMPANY]. I'm your property assistant. How can I help you today?\\n\\nYou can ask me about:\\n• Available properties\\n• Schedule visits\\n• Loan assistance\\n• Update requirements\";\n  \n} else {\n  // Default response for unrecognized queries\n  response = \"I'm here to help! 🤖\\n\\nYou can:\\n✅ Confirm your requirements\\n📝 Change your preferences\\n📞 Request a callback\\n🏠 Ask about properties\\n📅 Schedule a visit\\n\\nOr simply type your question and I'll assist you!\";\n}\n\nreturn [{\n  to: from,\n  response: response\n}];"
+      },
+      "name": "WhatsApp Bot Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 900],
+      "id": "15"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://graph.facebook.com/v18.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.to}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={\"body\": \"{{$json.response}}\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send WhatsApp Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 900],
+      "id": "16"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\": \"success\"}",
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 900],
+      "id": "17"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Leads Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads Sheet": {
+      "main": [
+        [
+          {
+            "node": "Filter Callable Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Callable Leads": {
+      "main": [
+        [
+          {
+            "node": "Check Retry Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry Limit": {
+      "main": [
+        [
+          {
+            "node": "Update Status to Calling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status to Calling": {
+      "main": [
+        [
+          {
+            "node": "Initiate Retell AI Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Retell Call Complete": {
+      "main": [
+        [
+          {
+            "node": "Parse Call Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Call Results": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status in Sheet": {
+      "main": [
+        [
+          {
+            "node": "Check If Data Collected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Data Collected": {
+      "main": [
+        [
+          {
+            "node": "Save to CallResults Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to CallResults Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - WhatsApp Incoming": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Bot Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Bot Logic": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "agent": {
+    "name": "Employee Salary Query Agent",
+    "description": "An AI agent that connects to the employee database and answers salary-related questions",
+    "version": "1.0.0",
+    "language": "en",
+    "timezone": "Asia/Kolkata"
+  },
+  "database": {
+    "type": "database_connector",
+    "connection": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "employee_db",
+      "user": "admin",
+      "password": "your_password_here",
+      "dialect": "postgresql"
+    },
+    "fallback_databases": [
+      {
+        "type": "mysql",
+        "host": "localhost",
+        "port": 3306,
+        "database": "employee_db"
+      },
+      {
+        "type": "sqlite",
+        "path": "./employee_db.sqlite"
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "query_employee_salary",
+      "description": "Query the database to find an employee's salary information",
+      "type": "database_query",
+      "function": {
+        "sql_template": "SELECT name, position, salary, department FROM employees WHERE LOWER(name) = LOWER(?)",
+        "parameters": ["employee_name"],
+        "expected_fields": ["name", "position", "salary", "department"]
+      },
+      "examples": [
+        {
+          "input": "How much salary does Rutuj have?",
+          "output": "Rutuj's salary is ₹450,000 per annum as a Software Engineer in the IT Department"
+        }
+      ]
+    },
+    {
+      "name": "query_department_salaries",
+      "description": "Get average salary information for a specific department",
+      "type": "database_query",
+      "function": {
+        "sql_template": "SELECT department, AVG(salary) as average_salary, COUNT(*) as employee_count FROM employees WHERE LOWER(department) = LOWER(?) GROUP BY department",
+        "parameters": ["department_name"],
+        "expected_fields": ["department", "average_salary", "employee_count"]
+      }
+    },
+    {
+      "name": "query_salary_range",
+      "description": "Find employees within a specific salary range",
+      "type": "database_query",
+      "function": {
+        "sql_template": "SELECT name, position, salary FROM employees WHERE salary BETWEEN ? AND ? ORDER BY salary DESC",
+        "parameters": ["min_salary", "max_salary"],
+        "expected_fields": ["name", "position", "salary"]
+      }
+    },
+    {
+      "name": "query_highest_earners",
+      "description": "Get the highest paid employees",
+      "type": "database_query",
+      "function": {
+        "sql_template": "SELECT name, position, salary, department FROM employees ORDER BY salary DESC LIMIT ?",
+        "parameters": ["limit"],
+        "expected_fields": ["name", "position", "salary", "department"]
+      }
+    }
+  ],
+  "intent_recognition": {
+    "salary_query_patterns": [
+      "What is {name}'s salary",
+      "How much salary does {name} have",
+      "How much does {name} earn",
+      "{name}'s salary",
+      "Tell me {name}'s salary",
+      "What is {name}'s pay",
+      "salary of {name}"
+    ],
+    "department_patterns": [
+      "Average salary in {department}",
+      "How much do {department} employees earn",
+      "{department} average salary",
+      "Salary range in {department}"
+    ],
+    "comparison_patterns": [
+      "Who earns more, {name1} or {name2}",
+      "Compare salary of {name1} and {name2}",
+      "Salary difference between {name1} and {name2}"
+    ]
+  },
+  "response_generation": {
+    "format": "natural_language",
+    "templates": {
+      "single_employee_salary": "{name}'s salary is ₹{salary} per annum as a {position} in the {department} department",
+      "not_found": "I couldn't find salary information for {name} in the database",
+      "department_average": "The average salary in the {department} department is ₹{average_salary} with {employee_count} employees",
+      "error": "I encountered an error while querying the database. Please try again later."
+    },
+    "include_metadata": true,
+    "currency_symbol": "₹",
+    "currency_format": "Indian_Rupee"
+  },
+  "security": {
+    "authentication": {
+      "type": "api_key",
+      "required": true
+    },
+    "sanitization": {
+      "enabled": true,
+      "remove_sql_injection": true,
+      "validate_input": true
+    },
+    "access_control": {
+      "allowed_queries": ["SELECT"],
+      "blocked_queries": ["DROP", "DELETE", "UPDATE", "INSERT"],
+      "require_approval_for": ["sensitive_fields"]
+    }
+  },
+  "error_handling": {
+    "database_connection_failed": "Unable to connect to the database. Please try again later.",
+    "query_timeout": "The query took too long to execute. Please try with more specific criteria.",
+    "invalid_input": "Please provide a valid employee name or criteria.",
+    "no_results": "No employees found matching your criteria."
+  },
+  "logging": {
+    "enabled": true,
+    "log_queries": true,
+    "log_level": "INFO",
+    "save_to_file": "./agent_logs.log"
+  },
+  "performance": {
+    "cache_enabled": true,
+    "cache_duration_seconds": 3600,
+    "max_query_results": 100,
+    "timeout_seconds": 30
+  }
+}

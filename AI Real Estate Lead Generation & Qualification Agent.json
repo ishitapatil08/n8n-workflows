@@ -1,0 +1,579 @@
+{
+  "name": "AI Real Estate Lead Generation & Qualification Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "real-estate-leads",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "26dc1113-d5c1-4a43-b5ac-4e05afb58c89",
+      "name": "Lead Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        192
+      ],
+      "webhookId": "real-estate-lead-capture"
+    },
+    {
+      "parameters": {
+        "path": "facebook-leads",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8e3633ce-c323-46f7-905a-718640c6c193",
+      "name": "Facebook Lead Ads Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        384
+      ],
+      "webhookId": "facebook-lead-ads"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Lead Normalizer\n// Handles leads from all sources\n\nconst input = $input.first().json;\nconst body = input.body || input;\n\n// Detect source\nconst source = body.source || \n               body.lead_source || \n               body.form_name ||\n               (body.ad_id ? 'facebook_ads' : 'website') ||\n               'unknown';\n\n// Extract lead data from any format\nconst lead = {\n  // Identity\n  id: 'LEAD_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6).toUpperCase(),\n  \n  full_name: body.full_name || \n             body.name || \n             `${body.first_name || ''} ${body.last_name || ''}`.trim() || \n             'Unknown',\n             \n  email: body.email || \n         body.email_address || \n         body.contact_email || '',\n         \n  phone: body.phone || \n         body.phone_number || \n         body.mobile || \n         body.contact_phone || '',\n\n  // Property Requirements\n  property_type: body.property_type || \n                 body.propertyType || \n                 body.type || 'Not Specified',\n                 \n  bedrooms: body.bedrooms || \n            body.beds || \n            body.bedroom_count || null,\n            \n  budget_min: parseFloat(body.budget_min || body.min_budget || body.price_min || 0),\n  \n  budget_max: parseFloat(body.budget_max || body.max_budget || \n              body.price_max || body.budget || 0),\n              \n  location: body.location || \n            body.preferred_location || \n            body.area || \n            body.city || 'Not Specified',\n            \n  // Intent Signals          \n  buying_timeline: body.buying_timeline || \n                   body.timeline || \n                   body.when || 'Not Specified',\n                   \n  financing: body.financing || \n             body.payment_method || \n             body.mortgage || 'Not Specified',\n             \n  message: body.message || \n           body.comments || \n           body.notes || \n           body.additional_info || '',\n\n  // Tracking\n  source: source,\n  utm_source: body.utm_source || '',\n  utm_campaign: body.utm_campaign || '',\n  ad_id: body.ad_id || '',\n  form_id: body.form_id || '',\n  \n  // Timestamps\n  captured_at: new Date().toISOString(),\n  created_date: new Date().toLocaleDateString('en-US', {\n    year: 'numeric', month: 'long', day: 'numeric'\n  })\n};\n\n// Basic validation flags\nlead.has_email = lead.email.includes('@');\nlead.has_phone = lead.phone.length > 7;\nlead.has_budget = lead.budget_max > 0;\nlead.has_location = lead.location !== 'Not Specified';\nlead.has_timeline = lead.buying_timeline !== 'Not Specified';\n\n// Completeness score (0-100)\nconst fields = [lead.has_email, lead.has_phone, lead.has_budget, \n                lead.has_location, lead.has_timeline, \n                lead.property_type !== 'Not Specified',\n                lead.bedrooms !== null,\n                lead.message.length > 10];\nlead.data_completeness = Math.round((fields.filter(Boolean).length / fields.length) * 100);\n\nreturn [{ json: lead }];"
+      },
+      "id": "d4cd37ef-c3e3-4bf2-9ed1-fa7c9fef5b35",
+      "name": "Normalize & Extract Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert real estate lead qualification AI. Analyze lead data and return ONLY valid JSON with no extra text.\n\nScoring Criteria:\n- Budget defined & realistic: 0-25 points\n- Location specified: 0-15 points  \n- Timeline urgency (immediate=20, 3months=15, 6months=10, year+=5): 0-20 points\n- Contact info completeness: 0-15 points\n- Property requirements clarity: 0-15 points\n- Message intent signals: 0-10 points\n\nTotal score 0-100:\n- 70-100 = HIGH_INTENT (serious buyer, contact immediately)\n- 40-69 = MEDIUM_INTEREST (interested, nurture with content)\n- 0-39 = LOW_PRIORITY (browsing, add to drip campaign)\n\nReturn this exact JSON structure:\n{\n  \"score\": <number 0-100>,\n  \"qualification\": \"HIGH_INTENT\" | \"MEDIUM_INTEREST\" | \"LOW_PRIORITY\",\n  \"score_breakdown\": {\n    \"budget_score\": <0-25>,\n    \"location_score\": <0-15>,\n    \"timeline_score\": <0-20>,\n    \"contact_score\": <0-15>,\n    \"requirements_score\": <0-15>,\n    \"intent_score\": <0-10>\n  },\n  \"buying_signals\": [<list of positive signals found>],\n  \"concerns\": [<list of concerns or missing info>],\n  \"recommended_action\": \"<specific action for sales agent>\",\n  \"best_contact_time\": \"<suggested time to contact>\",\n  \"agent_notes\": \"<detailed notes for the sales agent>\",\n  \"suggested_properties\": \"<description of property types to show>\",\n  \"urgency_level\": \"immediate\" | \"this_week\" | \"this_month\" | \"nurture\"\n}",
+              "role": "system"
+            },
+            {
+              "content": "=Qualify this real estate lead:\n\nName: {{ $json.full_name }}\nEmail: {{ $json.email }}\nPhone: {{ $json.phone }}\nProperty Type: {{ $json.property_type }}\nBedrooms: {{ $json.bedrooms }}\nBudget Range: ${{ $json.budget_min }} - ${{ $json.budget_max }}\nPreferred Location: {{ $json.location }}\nBuying Timeline: {{ $json.buying_timeline }}\nFinancing: {{ $json.financing }}\nMessage: {{ $json.message }}\nLead Source: {{ $json.source }}\nData Completeness: {{ $json.data_completeness }}%\nCaptured At: {{ $json.captured_at }}\n\nProvide detailed qualification analysis."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0.2
+        }
+      },
+      "id": "44739c36-ed35-44e8-abf5-a603393ea18c",
+      "name": "AI Lead Qualification Engine",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        -1328,
+        192
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "qcWqR0BMMP8nRtPK",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json.message?.content || \n                   $input.first().json.choices?.[0]?.message?.content || '{}';\nconst leadData = $('Normalize & Extract Lead Data').first().json;\n\nlet qualification = {};\ntry {\n  const cleaned = aiResponse.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  qualification = JSON.parse(cleaned);\n} catch(e) {\n  qualification = {\n    score: 30,\n    qualification: 'LOW_PRIORITY',\n    score_breakdown: {},\n    buying_signals: [],\n    concerns: ['Unable to parse AI response'],\n    recommended_action: 'Manual review required',\n    best_contact_time: 'Business hours',\n    agent_notes: 'AI parsing failed - manual review needed',\n    suggested_properties: leadData.property_type,\n    urgency_level: 'nurture'\n  };\n}\n\n// Merge lead data with qualification\nconst enrichedLead = {\n  ...leadData,\n  qualification: {\n    ...qualification,\n    qualified_at: new Date().toISOString()\n  },\n  priority: qualification.qualification,\n  score: qualification.score,\n  urgency: qualification.urgency_level,\n  \n  // Flags for routing\n  is_high_intent: qualification.qualification === 'HIGH_INTENT',\n  is_medium_interest: qualification.qualification === 'MEDIUM_INTEREST',\n  is_low_priority: qualification.qualification === 'LOW_PRIORITY',\n  \n  // Priority labels\n  priority_emoji: qualification.qualification === 'HIGH_INTENT' ? '🔥' :\n                  qualification.qualification === 'MEDIUM_INTEREST' ? '⚡' : '❄️',\n  priority_label: qualification.qualification === 'HIGH_INTENT' ? 'HOT LEAD' :\n                  qualification.qualification === 'MEDIUM_INTEREST' ? 'WARM LEAD' : 'COLD LEAD'\n};\n\nreturn [{ json: enrichedLead }];"
+      },
+      "id": "a2170548-608f-499c-8cbb-b20e32180bbe",
+      "name": "Merge & Enrich Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a professional real estate email copywriter. Write personalized, warm, and engaging emails based on lead qualification level.\n\nFor HIGH_INTENT: Urgent, personal, offer immediate call\nFor MEDIUM_INTEREST: Informative, send listings, soft CTA\nFor LOW_PRIORITY: Educational, newsletter style, gentle CTA\n\nAlways:\n- Use the lead's first name\n- Reference their specific property requirements\n- Mention their location preference\n- Include a clear next step\n- Keep tone professional but friendly\n- Maximum 200 words\n- No placeholder text like [Agent Name] - use 'Our Team'",
+              "role": "system"
+            },
+            {
+              "content": "=Write a personalized real estate email for:\n\nName: {{ $json.full_name }}\nQualification: {{ $json.priority_label }}\nScore: {{ $json.score }}/100\nProperty Interest: {{ $json.bedrooms }} bedroom {{ $json.property_type }}\nLocation: {{ $json.location }}\nBudget: ${{ $json.budget_min }} - ${{ $json.budget_max }}\nTimeline: {{ $json.buying_timeline }}\nAgent Notes: {{ $json.qualification.agent_notes }}\nSuggested Properties: {{ $json.qualification.suggested_properties }}\nRecommended Action: {{ $json.qualification.recommended_action }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 400,
+          "temperature": 0.7
+        }
+      },
+      "id": "51613f8a-6790-48be-b93f-a45fb9995d20",
+      "name": "AI Generate Personalized Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        -784,
+        192
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "qcWqR0BMMP8nRtPK",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const emailContent = $input.first().json.message?.content || \n                     $input.first().json.choices?.[0]?.message?.content || '';\nconst leadData = $('Merge & Enrich Lead Data').first().json;\n\nreturn [{\n  json: {\n    ...leadData,\n    personalized_email: emailContent,\n    email_subject: leadData.is_high_intent \n      ? `🔥 ${leadData.full_name}, Your Perfect Property Awaits - Exclusive Listings Inside`\n      : leadData.is_medium_interest\n      ? `${leadData.full_name}, We Found Properties Matching Your Requirements`\n      : `Explore Top Properties in ${leadData.location} - Curated Just For You`,\n    ready_to_send: true\n  }\n}];"
+      },
+      "id": "d56c4971-3477-46c0-9974-1c50c718f61c",
+      "name": "Prepare Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.is_high_intent }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equal"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HIGH_INTENT"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.is_medium_interest }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equal"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "MEDIUM_INTEREST"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.is_low_priority }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equal"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "LOW_PRIORITY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "716ef230-3d48-4ecb-bc9d-8b407e7bb830",
+      "name": "Route by Lead Priority",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -304,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_SLACK_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "=🔥 *HOT LEAD ALERT* 🔥\n\n*Lead ID:* {{ $json.id }}\n*Name:* {{ $json.full_name }}\n*Score:* {{ $json.score }}/100 ⭐\n*Priority:* {{ $json.priority_label }}\n\n━━━━━━━━━━━━━━━━━━━━\n📋 *PROPERTY REQUIREMENTS*\n• Type: {{ $json.property_type }}\n• Bedrooms: {{ $json.bedrooms }}\n• Budget: ${{ $json.budget_min }} - ${{ $json.budget_max }}\n• Location: {{ $json.location }}\n• Timeline: {{ $json.buying_timeline }}\n• Financing: {{ $json.financing }}\n\n━━━━━━━━━━━━━━━━━━━━\n📞 *CONTACT INFO*\n• Email: {{ $json.email }}\n• Phone: {{ $json.phone }}\n• Best Time: {{ $json.qualification.best_contact_time }}\n\n━━━━━━━━━━━━━━━━━━━━\n🎯 *AI AGENT NOTES*\n{{ $json.qualification.agent_notes }}\n\n⚡ *RECOMMENDED ACTION:*\n{{ $json.qualification.recommended_action }}\n\n🏠 *SUGGESTED PROPERTIES:*\n{{ $json.qualification.suggested_properties }}\n\n💡 *BUYING SIGNALS:*\n{{ $json.qualification.buying_signals.join('\\n• ') }}\n\n━━━━━━━━━━━━━━━━━━━━\n*Source:* {{ $json.source }} | *Captured:* {{ $json.created_date }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "ac4cd0fe-08c5-4c0b-8ced-b79c415d6599",
+      "name": "Slack - Hot Lead Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        -96
+      ],
+      "webhookId": "85cb4c39-c083-427f-ab92-5adaffdde9cc",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "shkJC31mqhB2WZAf",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "leads@yourrealestate.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.email_subject }}",
+        "options": {}
+      },
+      "id": "06338403-8b18-4c09-b34f-e47a10d42f88",
+      "name": "Send Personalized Email to Lead",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -64,
+        144
+      ],
+      "webhookId": "1d31a5cf-d361-42f5-acd2-9788cc6ec62f"
+    },
+    {
+      "parameters": {
+        "fromEmail": "leads@yourrealestate.com",
+        "toEmail": "agent@yourrealestate.com",
+        "subject": "={{ $json.priority_emoji }} {{ $json.priority_label }} - {{ $json.full_name }} | Score: {{ $json.score }}/100",
+        "options": {}
+      },
+      "id": "5ac6cdb7-f213-4169-9fcd-10194edb1fc5",
+      "name": "Email Agent - Hot Lead",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -64,
+        384
+      ],
+      "webhookId": "6812172e-cf74-468e-b4c9-6633282bccb4"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "firstName": "={{ $json.full_name.split(' ')[0] }}",
+          "lastName": "={{ $json.full_name.split(' ').slice(1).join(' ') }}"
+        },
+        "options": {}
+      },
+      "id": "4e864581-b7e3-4560-b407-b806982ea1d2",
+      "name": "Save Lead to HubSpot CRM",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.1,
+      "position": [
+        368,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Lead ID": "={{ $json.id }}",
+            "Full Name": "={{ $json.full_name }}",
+            "Email": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Property Type": "={{ $json.property_type }}",
+            "Bedrooms": "={{ $json.bedrooms }}",
+            "Budget Min": "={{ $json.budget_min }}",
+            "Budget Max": "={{ $json.budget_max }}",
+            "Location": "={{ $json.location }}",
+            "Timeline": "={{ $json.buying_timeline }}",
+            "Lead Score": "={{ $json.score }}",
+            "Qualification": "={{ $json.priority }}",
+            "Priority Label": "={{ $json.priority_label }}",
+            "Source": "={{ $json.source }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Agent Notes": "={{ $json.qualification.agent_notes }}",
+            "Recommended Action": "={{ $json.qualification.recommended_action }}",
+            "Buying Signals": "={{ $json.qualification.buying_signals.join(', ') }}",
+            "Captured At": "={{ $json.captured_at }}",
+            "Status": "New"
+          }
+        },
+        "options": {}
+      },
+      "id": "e911ebb1-4685-479f-933c-e70629fb75ed",
+      "name": "Save Lead to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        320,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"lead_id\": \"{{ $json.id }}\",\n  \"message\": \"Lead captured and qualified successfully\",\n  \"qualification\": \"{{ $json.priority }}\",\n  \"score\": {{ $json.score }},\n  \"next_steps\": \"{{ $json.qualification.recommended_action }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "9ccdb766-23a9-49df-96cc-df7fac72d0d2",
+      "name": "Return Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        624,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_SLACK_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "=⚡ *WARM LEAD - Follow Up Required*\n\n*Name:* {{ $json.full_name }}\n*Score:* {{ $json.score }}/100\n*Interest:* {{ $json.bedrooms }}BR {{ $json.property_type }} in {{ $json.location }}\n*Budget:* ${{ $json.budget_max }}\n*Timeline:* {{ $json.buying_timeline }}\n*Email:* {{ $json.email }}\n\n*Action:* {{ $json.qualification.recommended_action }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "25040171-374e-4013-8d87-d0249ee365d3",
+      "name": "Slack - Warm Lead Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        592
+      ],
+      "webhookId": "a0700704-654a-40a5-a47f-a3aed6f1560d"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Extract Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Lead Ads Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Extract Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Extract Lead Data": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Qualification Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Qualification Engine": {
+      "main": [
+        [
+          {
+            "node": "Merge & Enrich Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Enrich Lead Data": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Personalized Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Personalized Email": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Content": {
+      "main": [
+        [
+          {
+            "node": "Route by Lead Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Lead Priority": {
+      "main": [
+        [
+          {
+            "node": "Slack - Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Warm Lead Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Lead to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Hot Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Personalized Email to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Personalized Email to Lead": {
+      "main": [
+        [
+          {
+            "node": "Email Agent - Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Agent - Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Save Lead to HubSpot CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead to HubSpot CRM": {
+      "main": [
+        [
+          {
+            "node": "Save Lead to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Return Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Warm Lead Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Personalized Email to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "802e14d6-f52b-4769-a4e5-ba8f6f6afe38",
+  "meta": {
+    "instanceId": "d2b0503a347d3f73f62b1daac88bc93116c955b4b00fb1ba9c6a6aaba69fb99b"
+  },
+  "id": "P4IXtMoXw5QKLyW6lSSxQ",
+  "tags": []
+}
