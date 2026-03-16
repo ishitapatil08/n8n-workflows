@@ -1,7 +1,7 @@
 # n8n Workflow Automation Repository
 
 ## Overview
-This repository contains a collection of workflow automation solutions built using :contentReference[oaicite:0]{index=0}. The workflows are designed to automate business processes, integrate external APIs, and implement AI-driven automation systems for real-world use cases.
+This repository contains a collection of workflow automation solutions built. The workflows are designed to automate business processes, integrate external APIs, and implement AI-driven automation systems for real-world use cases.
 
 The project demonstrates practical applications of workflow orchestration, including CRM automation, lead management, and intelligent decision-making systems.
 
